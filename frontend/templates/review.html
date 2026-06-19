@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Review extraction — FAH Explorer{% endblock %}
+{% block content %}
+<h1>Extraction review</h1>
+<p class="muted">
+  {{ document.filename }} · status <span class="status">{{ document.extraction_status }}</span>
+  · <a class="btn link" href="/projects/{{ project_id }}/workspace">← workspace</a>
+</p>
+<p class="muted">
+  The raw report is archived immutably; nothing reaches the database until you approve here
+  (forensic chain of custody).
+</p>
+
+{% if not extracted %}
+<div class="card">
+  <p>No extraction has been run for this document yet.</p>
+  <button onclick="extract()">Run extraction (LLM)</button>
+  <span id="ex-msg" class="muted"></span>
+</div>
+{% else %}
+<div class="card">
+  <div class="row">
+    <span class="status">model: {{ model or "—" }}</span>
+    {% if approved %}<span class="pill low">approved</span>{% endif %}
+  </div>
+  {% if validation %}
+    {% if validation.ok %}
+      <div class="msg ok">Validation passed.</div>
+    {% else %}
+      <div class="msg err"><b>Validation errors (must fix before commit):</b>
+        <ul>{% for e in validation.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if validation.warnings %}
+      <div class="msg warn"><b>Warnings:</b>
+        <ul>{% for w in validation.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  {% endif %}
+
+  <label>Parsed data (editable JSON) — correct any errors before approving</label>
+  <textarea id="payload">{{ payload_json }}</textarea>
+
+  <div class="grid2" style="margin-top:10px">
+    <div><label>Reviewed by</label><input type="text" id="reviewed_by" placeholder="your name / email" /></div>
+  </div>
+  <div id="ap-msg"></div>
+  <p><button onclick="approve()">Approve &amp; commit to database</button></p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PID = {{ project_id }}, DID = {{ document.id }};
+
+async function extract() {
+  const m = document.getElementById("ex-msg"); m.textContent = "Extracting…";
+  const r = await fetch(`/projects/${PID}/extraction/${DID}/extract`, { method: "POST" });
+  if (r.ok) location.reload();
+  else m.textContent = (await r.json()).detail || "Failed";
+}
+
+async function approve() {
+  const msg = document.getElementById("ap-msg");
+  let payload;
+  try { payload = JSON.parse(document.getElementById("payload").value); }
+  catch (e) { msg.innerHTML = `<div class="msg err">Invalid JSON: ${e.message}</div>`; return; }
+  const reviewed_by = document.getElementById("reviewed_by").value.trim();
+  if (!reviewed_by) { msg.innerHTML = `<div class="msg err">Enter a reviewer name.</div>`; return; }
+  const r = await fetch(`/projects/${PID}/extraction/${DID}/approve`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reviewed_by, payload }) });
+  const j = await r.json();
+  if (r.ok) {
+    msg.innerHTML = `<div class="msg ok">Committed ${j.boreholes} boreholes, ${j.layers} layers, ${j.lab_results} lab results.</div>`;
+    setTimeout(() => location.href = `/projects/${PID}/workspace`, 1100);
+  } else { msg.innerHTML = `<div class="msg err">${j.detail || "Commit failed"}</div>`; }
+}
+</script>
+{% endblock %}

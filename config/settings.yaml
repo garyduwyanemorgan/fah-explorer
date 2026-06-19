@@ -1,0 +1,65 @@
+# FAH Explorer — runtime settings
+# All paths are relative to the project root unless absolute. No hardcoded paths in code:
+# code reads everything from here. Override via environment where noted.
+
+app:
+  name: "FAH Explorer"
+  version: "0.1.0"           # code/app version (stamped into engine_version)
+  log_level: "INFO"          # passed to logging module
+
+paths:
+  data_dir: "data"
+  uploads_dir: "data/uploads"        # immutable raw PDFs
+  extracted_dir: "data/extracted"    # extraction JSON artefacts (audit)
+  exports_dir: "data/exports"        # KMZ + PDF outputs
+  database: "data/fah_explorer.db"   # SQLite (MVP)
+
+database:
+  url: "sqlite:///data/fah_explorer.db"   # override with DB_URL env for PostGIS later
+
+crs:
+  input_default: "EPSG:32640"   # UTM Zone 40N (Dubai)
+  storage: "EPSG:4326"          # WGS84 lon/lat for mapping
+
+extraction:
+  provider: "anthropic"
+  model: "claude-opus-4-8"      # vision-capable; used for scanned pages too
+  prompt_version: "extract-v1"  # versioned for reproducibility
+  ocr:
+    enabled: true
+    engine: "tesseract"
+    language: "eng"
+  require_human_review: true    # hard gate before DB commit (forensic requirement)
+
+gis:
+  base_layer: "satellite"       # satellite preferred (Google Earth look); osm optional
+  # Interpolation: see docs/13. We interpolate DRIVERS (not risk), within hydrostratigraphic
+  # domains, then run the risk engine per grid cell. Method is tiered by data density.
+  interpolation:
+    interpolate: "drivers"            # drivers (correct) — never interpolate risk scores directly
+    grid_resolution_m: 10             # output raster cell size
+    boundary_constrained: true        # no interpolation across barriers/faults/facies
+    barrier_aware_distance: true      # geodesic (route-around-barrier) distance where gradational
+    anisotropy:
+      enabled: true
+      flow_azimuth_deg: null          # null = derive from interpolated GW-elevation gradient
+      ratio: 3.0                      # range-along-flow : range-across-flow
+    methods:                          # tiered fallback by boreholes-per-domain
+      - { min_points: 15, method: "kriging" }        # ordinary/universal; yields variance
+      - { min_points: 6,  method: "natural_neighbor" } # or anisotropic idw
+      - { min_points: 0,  method: "none" }           # points + data-hull only; flag insufficiency
+    confidence_from_variance: true    # kriging variance -> spatial confidence surface
+    mask:
+      use_data_hull: true             # convex hull / alpha-shape of boreholes
+      buffer_by_variogram_range: true
+      clip_to_site_boundary: true     # if a parcel boundary is supplied
+      outside_label: "insufficient_data"   # rendered hatched/grey, NEVER green
+  colors:                       # Green / Yellow / Orange / Red
+    low: "#2ECC40"
+    moderate: "#FFDC00"
+    high: "#FF851B"
+    critical: "#FF4136"
+
+rules:
+  translation: "config/translation_rules.yaml"
+  risk: "config/risk_rules.yaml"

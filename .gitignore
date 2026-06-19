@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Runtime data (raw uploads, extraction artefacts, exports, db) — not version-controlled
+data/uploads/*
+data/extracted/*
+data/exports/*
+*.db
+!data/uploads/.gitkeep
+!data/extracted/.gitkeep
+!data/exports/.gitkeep

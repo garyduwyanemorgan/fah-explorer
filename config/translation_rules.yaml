@@ -1,0 +1,130 @@
+# FAH Explorer — Hydrostratigraphic Translation Rules (CORE IP)
+# Geotechnical material descriptions -> hydraulic behaviour -> hydrostratigraphy.
+# Tunable by domain experts WITHOUT touching code. See docs/05.
+#
+# K values are indicative ranges in m/day. Qualitative band -> numeric range.
+
+version: "rules-1.0"
+
+# --- Qualitative conductivity bands -> numeric K (m/day) ---
+k_bands:
+  very_high: [50.0, 500.0]
+  high:      [5.0, 50.0]
+  moderate:  [0.5, 5.0]
+  low:       [0.01, 0.5]
+  very_low:  [0.00001, 0.01]
+
+storage_classes: [low, moderate, high]
+
+# --- Lithology dictionary: synonyms + default hydraulic properties ---
+# k_h / k_v reference the bands above. salinity_flag marks salinity sources.
+lithologies:
+  sand:
+    canonical_name: "Sand"
+    synonyms: ["sand", "sandy", "aeolian sand", "silty sand", "calcareous sand"]
+    k_h: high
+    k_v: high
+    storage: moderate
+    cemented_default: false
+    salinity_flag: false
+    perching_potential: low
+
+  sandstone:
+    canonical_name: "Cemented Sand / Sandstone"
+    synonyms: ["sandstone", "weakly cemented sand", "calcarenite"]
+    k_h: moderate
+    k_v: low            # cementation suppresses vertical flow -> perching
+    storage: low
+    cemented_default: true
+    salinity_flag: false
+    perching_potential: high
+    is_control_layer: true
+
+  calcarenite:
+    canonical_name: "Calcarenite / Caprock"
+    synonyms: ["calcarenite", "caprock", "karstified limestone", "weathered limestone"]
+    k_h: moderate       # karst-variable -> reduces confidence downstream
+    k_v: low
+    storage: low
+    cemented_default: true
+    salinity_flag: false
+    perching_potential: high
+    karst_uncertainty: true
+
+  calcisiltite:
+    canonical_name: "Calcisiltite"
+    synonyms: ["calcisiltite", "calcareous siltstone", "marl"]
+    k_h: low
+    k_v: very_low       # groundwater barrier potential
+    storage: low
+    cemented_default: true
+    salinity_flag: false
+    perching_potential: high
+    is_barrier: true
+
+  sabkha:
+    canonical_name: "Sabkha"
+    synonyms: ["sabkha", "evaporite", "gypsiferous", "halite", "salt-cemented"]
+    k_h: low
+    k_v: low
+    storage: low
+    cemented_default: false
+    salinity_flag: true        # SALINITY SOURCE
+    evaporative_concentration: high
+    perching_potential: moderate
+
+  clay:
+    canonical_name: "Clay / Silt"
+    synonyms: ["clay", "silt", "clayey", "silty clay", "mudstone"]
+    k_h: very_low
+    k_v: very_low
+    storage: high
+    cemented_default: false
+    salinity_flag: false
+    perching_potential: high
+    is_aquitard: true
+
+  fill:
+    canonical_name: "Engineered Fill"
+    synonyms: ["fill", "made ground", "engineered fill", "imported material"]
+    k_h: high
+    k_v: high
+    storage: moderate
+    cemented_default: false
+    salinity_flag: false
+    perching_potential: low
+    utility_connected: true     # often a preferential flow path
+
+# --- Modifier adjustments ---
+modifiers:
+  # Density shifts K bands within a lithology. The base band represents loose/typical material,
+  # so loose = no shift; denser = lower K. This reproduces the charter exactly:
+  # base sand k_h = high -> loose sand = High, dense sand = Moderate.
+  density:
+    very_loose:   { k_shift: +1 }
+    loose:        { k_shift: 0 }
+    medium_dense: { k_shift: -1 }
+    dense:        { k_shift: -1 }
+    very_dense:   { k_shift: -2 }
+  # Cementation suppresses vertical K and creates perching. Applied ONLY as an *extra* modifier
+  # when cementation is described on a lithology whose base is not already cemented
+  # (e.g. "cemented sand"); for sandstone/calcarenite/calcisiltite the base K already encodes it.
+  cementation:
+    cemented:     { k_v_shift: -2, set_perching: true, raise_anisotropy: true }
+  spt_n_to_density:             # SPT-N -> density class (sands)
+    - { max_n: 4,  density: loose }
+    - { max_n: 10, density: medium_dense }
+    - { max_n: 30, density: dense }
+    - { max_n: 999, density: very_dense }
+
+# --- Hydrostratigraphic classification thresholds ---
+hydrostratigraphy:
+  unit_types: [aquifer, aquitard, barrier, perching_layer]
+  aquifer_min_k_h: moderate         # >= moderate band and water-bearing
+  aquitard_max_k_v: low             # <= low band
+  barrier_max_k_v: very_low         # very low + laterally continuous
+  perching_rule:                    # high-K over low-K_v above regional table
+    upper_min_k: moderate
+    lower_max_k_v: low
+  mounding_rule:
+    vertical_contrast_min: 10       # anisotropy / K-contrast threshold

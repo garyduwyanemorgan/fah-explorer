@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FAH Explorer — {{ project_name }}</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/map.css" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>FAH Explorer</h1>
+    <div class="project">{{ project_name }}</div>
+
+    <label for="category">Risk layer</label>
+    <select id="category">
+      {% for c in categories %}<option value="{{ c.key }}">{{ c.label }}</option>{% endfor %}
+    </select>
+
+    <label class="chk"><input type="checkbox" id="toggle-confidence" /> Show confidence veil</label>
+    <label class="chk"><input type="checkbox" id="toggle-surface" checked /> Show risk surface</label>
+
+    <div id="status"></div>
+
+    <div id="legend">
+      <div class="legend-title">Risk level</div>
+      <div><span class="swatch" style="background:#2ECC40"></span> Low</div>
+      <div><span class="swatch" style="background:#FFDC00"></span> Moderate</div>
+      <div><span class="swatch" style="background:#FF851B"></span> High</div>
+      <div><span class="swatch" style="background:#FF4136"></span> Critical</div>
+      <div><span class="swatch hatch"></span> Insufficient data</div>
+    </div>
+
+    <a id="kmz" href="#" target="_blank">Download KMZ (Google Earth)</a>
+    <a id="pdf" href="/projects/{{ project_id }}/export/pdf" target="_blank">Download forensic PDF</a>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    window.FAH = { projectId: {{ project_id }} };
+  </script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/js/map.js"></script>
+</body>
+</html>

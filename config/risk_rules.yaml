@@ -1,0 +1,114 @@
+# FAH Explorer — Risk Scoring Rules (CORE IP)
+# Additive weighted factors per category. Tunable WITHOUT code changes. See docs/06.
+#
+# Each factor has:
+#   id         - stable identifier (also used to build the explanation text)
+#   points     - added to the category score when the condition is true (score capped at 100)
+#   importance - weight used in the confidence calculation
+#   evidence   - the input the factor relies on; drives confidence reliability
+#                (gwl | ground_level | hydro | litho | anisotropy | lab:<param> | site:<key> | risk:<cat>)
+#   cond       - a structured condition (see risk/calculators.py for supported forms):
+#                {var, op, value} | {fn, arg} | {lab, op, value[/min/max]} | {site} |
+#                {flag} | {risk, level_in} | {any:[...]} | {all:[...]}
+
+version: "rules-1.0"
+
+# Score -> level bands (and map colour, see settings.yaml)
+levels:
+  - { max: 25,  level: low }
+  - { max: 50,  level: moderate }
+  - { max: 75,  level: high }
+  - { max: 100, level: critical }
+
+# Evidence reliability weights -> confidence
+confidence_weights:
+  measured: 1.0
+  inferred: 0.7
+  default: 0.4
+  missing: 0.0
+
+# Computed in dependency order: composite categories (asset_deterioration, liability) come after
+# the categories they reference.
+categories:
+
+  rise:
+    label: "Groundwater Rise"
+    factors:
+      - { id: shallow_water_table, points: 20, importance: 3, evidence: gwl,   cond: { var: gwl_depth_m, op: lt, value: 2.0 } }
+      - { id: hard_layer_shallow,  points: 25, importance: 3, evidence: hydro, cond: { var: cemented_or_lowkv_above_m, op: lt, value: 5.0 } }
+      - { id: irrigated_area,      points: 20, importance: 2, evidence: "site:irrigated", cond: { site: irrigated } }
+      - { id: sabkha_influence,    points: 15, importance: 2, evidence: litho, cond: { fn: has_lithology, arg: sabkha } }
+      - { id: pond_nearby,         points: 10, importance: 1, evidence: "site:open_water_nearby", cond: { site: open_water_nearby } }
+      - { id: tse_use,             points: 10, importance: 2, evidence: "site:tse_use", cond: { site: tse_use } }
+
+  mounding:
+    label: "Groundwater Mounding"
+    factors:
+      - { id: low_k_below_recharge, points: 30, importance: 3, evidence: hydro, cond: { flag: lowkv_unit_below_highk } }
+      - { id: vertical_contrast,    points: 25, importance: 3, evidence: anisotropy, cond: { var: max_anisotropy, op: ge, value: 10 } }
+      - { id: local_recharge,       points: 20, importance: 2, evidence: "site:irrigated", cond: { any: [ { site: irrigated }, { site: tse_use } ] } }
+      - { id: shallow_water_table,  points: 15, importance: 2, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 3.0 } }
+
+  perching:
+    label: "Perched Water"
+    factors:
+      - { id: perching_layer_present, points: 35, importance: 3, evidence: hydro, cond: { fn: has_unit_type, arg: perching_layer } }
+      - { id: highk_over_lowkv,       points: 25, importance: 3, evidence: hydro, cond: { flag: highk_over_lowkv } }
+      - { id: shallow_saturation,     points: 20, importance: 2, evidence: gwl,   cond: { var: gwl_depth_m, op: lt, value: 3.0 } }
+
+  salinity:
+    label: "Salinity"
+    factors:
+      - { id: sabkha_present,    points: 30, importance: 3, evidence: litho, cond: { fn: has_lithology, arg: sabkha } }
+      - { id: high_tds,          points: 25, importance: 3, evidence: "lab:tds", cond: { lab: tds, op: gt, value: 35000 } }
+      - { id: high_chloride,     points: 20, importance: 2, evidence: "lab:chloride", cond: { lab: chloride, op: gt, value: 5000 } }
+      - { id: shallow_saline_wt, points: 15, importance: 2, evidence: gwl, cond: { all: [ { var: gwl_depth_m, op: lt, value: 2.0 }, { flag: salinity_source } ] } }
+
+  sulphate:
+    label: "Sulphate Attack"
+    # Bands aligned to exposure classes; tune to the governing code (BRE/ACI).
+    factors:
+      - { id: so4_high,              points: 40, importance: 3, evidence: "lab:sulphate", cond: { lab: sulphate, op: gt, value: 3000 } }
+      - { id: so4_moderate,          points: 25, importance: 3, evidence: "lab:sulphate", cond: { lab: sulphate, op: between, min: 1500, max: 3000 } }
+      - { id: gw_foundation_contact, points: 20, importance: 2, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 2.0 } }
+
+  chloride:
+    label: "Chloride Attack"
+    factors:
+      - { id: cl_high,           points: 40, importance: 3, evidence: "lab:chloride", cond: { lab: chloride, op: gt, value: 5000 } }
+      - { id: cl_moderate,       points: 25, importance: 3, evidence: "lab:chloride", cond: { lab: chloride, op: between, min: 2000, max: 5000 } }
+      - { id: gw_rebar_exposure, points: 20, importance: 2, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 2.0 } }
+
+  asset_deterioration:
+    label: "Asset Deterioration"
+    # Composite: combines chemical attack + shallow GW + cyclic wetting.
+    factors:
+      - { id: salinity_component, points: 25, importance: 3, evidence: "risk:salinity", cond: { risk: salinity, level_in: [high, critical] } }
+      - { id: sulphate_component, points: 20, importance: 3, evidence: "risk:sulphate", cond: { risk: sulphate, level_in: [high, critical] } }
+      - { id: chloride_component, points: 20, importance: 3, evidence: "risk:chloride", cond: { risk: chloride, level_in: [high, critical] } }
+      - { id: shallow_gw,         points: 20, importance: 2, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 2.0 } }
+      - { id: cyclic_wetting,     points: 15, importance: 1, evidence: "site:tidal_influence", cond: { site: tidal_influence } }
+
+  flood:
+    label: "Flood Susceptibility"
+    factors:
+      - { id: shallow_table,    points: 30, importance: 3, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 1.5 } }
+      - { id: low_perm_surface, points: 25, importance: 2, evidence: hydro, cond: { var: surface_k_v, op: le, value: 0.5 } }
+      - { id: low_ground_level, points: 25, importance: 2, evidence: ground_level, cond: { var: ground_level_m, op: lt, value: 3.0 } }
+      - { id: poor_drainage,    points: 20, importance: 1, evidence: "site:poor_drainage", cond: { site: poor_drainage } }
+
+  dewatering:
+    label: "Dewatering Dependence"
+    factors:
+      - { id: high_k_aquifer,  points: 35, importance: 3, evidence: hydro, cond: { fn: has_unit_type, arg: aquifer } }
+      - { id: shallow_table,   points: 30, importance: 3, evidence: gwl, cond: { var: gwl_depth_m, op: lt, value: 3.0 } }
+      - { id: deep_excavation, points: 20, importance: 2, evidence: "site:deep_excavation", cond: { site: deep_excavation } }
+
+  liability:
+    label: "Long-Term Liability"
+    # Composite forward-looking signal: dissolution/collapse + dewatering reliance.
+    factors:
+      - { id: asset_deterioration_high, points: 30, importance: 3, evidence: "risk:asset_deterioration", cond: { risk: asset_deterioration, level_in: [high, critical] } }
+      - { id: sabkha_dissolution,       points: 25, importance: 3, evidence: litho, cond: { fn: has_lithology, arg: sabkha } }
+      - { id: dewatering_reliance,      points: 25, importance: 2, evidence: "risk:dewatering", cond: { risk: dewatering, level_in: [high, critical] } }
+      - { id: rising_trend,             points: 20, importance: 1, evidence: "site:regional_rising_trend", cond: { site: regional_rising_trend } }

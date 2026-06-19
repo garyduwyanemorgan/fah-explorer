@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — FAH Explorer{% endblock %}
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p class="muted">{{ project.location or "—" }} · {{ project.developer or "—" }} · CRS {{ project.crs_input or "—" }}</p>
+<p class="row">
+  <span class="status">Boreholes: {{ counts.boreholes }}</span>
+  <span class="status">Hydro-units: {{ counts.hydro_units }}</span>
+  <span class="status">Risk results: {{ counts.risk_results }}</span>
+  <a class="btn link" href="/">← all projects</a>
+</p>
+
+<div class="card">
+  <h2 style="margin-top:0">1 · Upload geotechnical report (PDF)</h2>
+  <form id="upload-form">
+    <input type="file" id="pdf" accept="application/pdf" required />
+    <button type="submit">Upload</button>
+  </form>
+  <div id="up-msg"></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">2 · Documents &amp; extraction review</h2>
+  {% if documents %}
+  <table>
+    <thead><tr><th>File</th><th>Status</th><th>Pages</th><th>OCR</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for d in documents %}
+      <tr>
+        <td>{{ d.filename }}</td>
+        <td><span class="status">{{ d.extraction_status }}</span></td>
+        <td>{{ d.page_count or "—" }}</td>
+        <td>{{ "yes" if d.ocr_used else "no" }}</td>
+        <td class="row">
+          <button class="secondary" onclick="extract({{ d.id }})">Run extraction</button>
+          <a class="btn link" href="/projects/{{ project.id }}/documents/{{ d.id }}/review">Review &amp; approve</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No documents uploaded yet.</p>{% endif %}
+  <div id="doc-msg"></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">3 · Interpret</h2>
+  <p class="row">
+    <button onclick="run('translate')">Run translation → hydrostratigraphy</button>
+    <span id="translate-msg" class="muted"></span>
+  </p>
+  <label>Site context for risk scoring</label>
+  <div class="checks">
+    {% for k in ["irrigated","tse_use","open_water_nearby","tidal_influence","poor_drainage","deep_excavation","regional_rising_trend"] %}
+    <label><input type="checkbox" class="site" value="{{ k }}" /> {{ k }}</label>
+    {% endfor %}
+  </div>
+  <p class="row" style="margin-top:10px">
+    <button onclick="runRisk()">Run risk scoring</button>
+    <span id="risk-msg" class="muted"></span>
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">4 · Outputs</h2>
+  <p class="row">
+    <a class="btn" href="/projects/{{ project.id }}/map">Open interactive map</a>
+    <a class="btn secondary" href="/projects/{{ project.id }}/export/pdf" target="_blank">Forensic PDF</a>
+    <span class="muted">KMZ per layer is available from the map.</span>
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PID = {{ project.id }};
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = document.getElementById("pdf").files[0];
+  if (!file) return;
+  const fd = new FormData(); fd.append("file", file);
+  const msg = document.getElementById("up-msg");
+  msg.innerHTML = '<div class="msg">Uploading…</div>';
+  const r = await fetch(`/projects/${PID}/upload`, { method: "POST", body: fd });
+  const j = await r.json();
+  if (r.ok) {
+    let warn = j.warning ? `<div class="msg warn">${j.warning}</div>` : "";
+    msg.innerHTML = `<div class="msg ok">Uploaded: ${j.pages_with_text} page(s) with text.</div>${warn}`;
+    setTimeout(() => location.reload(), 900);
+  } else { msg.innerHTML = `<div class="msg err">${j.detail || "Upload failed"}</div>`; }
+});
+
+async function extract(docId) {
+  const msg = document.getElementById("doc-msg");
+  msg.innerHTML = '<div class="msg">Extracting with the LLM…</div>';
+  const r = await fetch(`/projects/${PID}/extraction/${docId}/extract`, { method: "POST" });
+  const j = await r.json();
+  if (r.ok) location.href = `/projects/${PID}/documents/${docId}/review`;
+  else msg.innerHTML = `<div class="msg err">${j.detail || "Extraction failed"}</div>`;
+}
+
+async function run(kind) {
+  const span = document.getElementById(`${kind}-msg`);
+  span.textContent = "Running…";
+  const r = await fetch(`/projects/${PID}/${kind}`, { method: "POST" });
+  const j = await r.json();
+  span.textContent = r.ok ? JSON.stringify(j) : (j.detail || "Failed");
+}
+
+async function runRisk() {
+  const site = {};
+  document.querySelectorAll(".site").forEach((c) => { site[c.value] = c.checked; });
+  const span = document.getElementById("risk-msg");
+  span.textContent = "Scoring…";
+  const r = await fetch(`/projects/${PID}/risk`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ site }) });
+  const j = await r.json();
+  span.textContent = r.ok ? `Scored ${j.risk_results} results across ${j.boreholes} boreholes.` : (j.detail || "Failed");
+}
+</script>
+{% endblock %}

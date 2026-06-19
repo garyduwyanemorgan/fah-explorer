@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}FAH Explorer — Projects{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+<p class="muted">Transform geotechnical reports into groundwater &amp; asset-risk intelligence.</p>
+
+<div class="card">
+  <h2 style="margin-top:0">New project</h2>
+  <form id="new-project">
+    <div class="grid2">
+      <div><label>Name</label><input type="text" name="name" required placeholder="Marina Plot 7" /></div>
+      <div><label>Location</label><input type="text" name="location" placeholder="Dubai Marina" /></div>
+      <div><label>Developer</label><input type="text" name="developer" /></div>
+      <div><label>Report date</label><input type="date" name="report_date" /></div>
+      <div><label>Input CRS</label><input type="text" name="crs_input" value="EPSG:32640" /></div>
+    </div>
+    <div id="np-msg"></div>
+    <p><button type="submit">Create project</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">All projects</h2>
+  {% if projects %}
+  <table>
+    <thead><tr><th>Name</th><th>Location</th><th>Documents</th><th>Boreholes</th><th>Open</th></tr></thead>
+    <tbody>
+      {% for row in projects %}
+      <tr>
+        <td>{{ row.p.name }}</td>
+        <td>{{ row.p.location or "—" }}</td>
+        <td>{{ row.documents }}</td>
+        <td>{{ row.boreholes }}</td>
+        <td class="row">
+          <a class="btn link" href="/projects/{{ row.p.id }}/workspace">Workspace</a>
+          <a class="btn link" href="/projects/{{ row.p.id }}/map">Map</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No projects yet — create one above.</p>{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("new-project").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const body = { name: f.name.value, location: f.location.value || null,
+    developer: f.developer.value || null, crs_input: f.crs_input.value || null };
+  if (f.report_date.value) body.report_date = f.report_date.value;
+  const r = await fetch("/projects", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const msg = document.getElementById("np-msg");
+  if (r.ok) { const p = await r.json(); location.href = `/projects/${p.id}/workspace`; }
+  else { msg.innerHTML = `<div class="msg err">${(await r.json()).detail || "Error"}</div>`; }
+});
+</script>
+{% endblock %}

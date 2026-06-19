@@ -1,0 +1,41 @@
+{
+  "name": "Fontana Liri Plot 12",
+  "location": "Dubai Investment Park",
+  "developer": "Example Developments S.r.l.",
+  "report_date": "2024-09-01",
+  "crs": "EPSG:32640",
+  "boreholes": [
+    {
+      "bh_ref": "BH-01",
+      "easting": 512345.6,
+      "northing": 2765432.1,
+      "ground_level_m": 3.2,
+      "gwl_depth_m": 1.8,
+      "date_drilled": "2024-08-20",
+      "layers": [
+        {"top_depth_m": 0.0, "bottom_depth_m": 2.0, "raw_description": "Brown silty SAND, loose", "spt_n": 8, "moisture": "moist", "density_desc": "loose"},
+        {"top_depth_m": 2.0, "bottom_depth_m": 3.5, "raw_description": "Pale calcareous SAND, dense", "spt_n": 32, "moisture": "moist", "density_desc": "dense"},
+        {"top_depth_m": 3.5, "bottom_depth_m": 8.0, "raw_description": "Weakly cemented SANDSTONE / calcarenite", "spt_n": null, "moisture": "wet", "density_desc": null}
+      ],
+      "lab_results": [
+        {"depth_m": 1.5, "parameter": "chloride", "value": 4200, "unit": "mg/L"},
+        {"depth_m": 1.5, "parameter": "sulphate", "value": 1900, "unit": "mg/L"}
+      ]
+    },
+    {
+      "bh_ref": "BH-02",
+      "easting": 512410.2,
+      "northing": 2765500.7,
+      "ground_level_m": 3.0,
+      "gwl_depth_m": 2.4,
+      "date_drilled": "2024-08-21",
+      "layers": [
+        {"top_depth_m": 0.0, "bottom_depth_m": 1.5, "raw_description": "Engineered FILL", "spt_n": 12, "moisture": "dry", "density_desc": "medium dense"},
+        {"top_depth_m": 1.5, "bottom_depth_m": 6.0, "raw_description": "Grey SABKHA, gypsiferous", "spt_n": 5, "moisture": "saturated", "density_desc": "loose"}
+      ],
+      "lab_results": [
+        {"depth_m": 2.0, "parameter": "tds", "value": 48000, "unit": "mg/L"}
+      ]
+    }
+  ]
+}
