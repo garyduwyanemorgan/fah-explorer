@@ -1,93 +1,165 @@
-# FAH Explorer
+# FAH Explorer — v1.0.0
 
-**Forensic Asset Hydrogeology Explorer** — a decision-support platform that transforms archived
-GCC geotechnical reports into groundwater behaviour and asset-risk intelligence.
+**Forensic Asset Hydrogeology Explorer** — transforms archived GCC geotechnical reports into
+groundwater behaviour and asset-risk intelligence for forensic investigations.
 
 > Core IP — the **translation layer**:
 > `Geotechnical Data → Hydrostratigraphy → Groundwater Behaviour → Asset Risk`
 
-FAH Explorer is **not** a groundwater model and **not** a geotechnical database. It is an
-explainable decision-support system: every risk score it produces carries a **level**, a
-**confidence score**, the **evidence used**, and a plain-language **hydrogeological explanation**.
+Every risk score carries a **level**, a **confidence percentage**, the **evidence used**, and a
+plain-language **hydrogeological explanation**. All outputs are traceable back to the source
+document (forensic chain of custody).
 
-## Status
+---
 
-🟢 **MVP built (Sprints 0–6 complete).** The full charter loop runs end-to-end — upload → extract
-(Claude + OCR, human-reviewed) → translate → risk (10 explained, confidence-rated categories) →
-interactive map (interpolated surfaces + confidence) → KMZ + forensic PDF export. **41 tests pass.**
-Built sprint-by-sprint per the [implementation roadmap](docs/11_IMPLEMENTATION_ROADMAP.md).
+## Quick start (local)
 
 ```bash
+git clone <repo>
 cd fah-explorer
-pip install -e .                          # or install the deps in pyproject.toml
-python scripts/init_db.py                 # create schema + seed lithology dictionary
-python scripts/demo_ingest.py             # ingest→commit→translate→risk (no API key needed)
-python scripts/demo_surface.py            # build a multi-borehole project + surface + KMZ + PDF
-uvicorn fah.main:app --app-dir backend    # then open http://127.0.0.1:8000/  (dashboard)
-python -m pytest                          # 41 tests
+pip install -e .
+cp .env.example .env          # add ANTHROPIC_API_KEY and FAH_PASSWORD
+python scripts/init_db.py     # create schema + seed lithology dictionary
+bash scripts/start.sh         # Linux/macOS
+.\scripts\start.ps1           # Windows PowerShell
+# open http://localhost:8000
 ```
 
-The web UI starts at the **dashboard** (`/`): create a project → **workspace** (upload PDF, run
-extraction, review &amp; approve, translate, score risk) → **map** (interpolated risk surfaces +
-confidence + popups) → export KMZ / forensic PDF. Live LLM extraction needs `ANTHROPIC_API_KEY`
-in `.env`; everything else runs without it.
+---
 
-## Documentation
+## Production deployment
 
-Start at **[docs/00_INDEX.md](docs/00_INDEX.md)**. Highlights:
+### Docker (recommended)
 
-- [Project Vision](docs/01_PROJECT_VISION.md) · [Domain Knowledge](docs/02_DOMAIN_KNOWLEDGE_FAH.md)
-- [System Architecture](docs/03_SYSTEM_ARCHITECTURE.md) · [Database Schema](docs/04_DATABASE_SCHEMA.md)
-- [Hydrostratigraphic Translation](docs/05_HYDROSTRATIGRAPHIC_TRANSLATION.md) (core IP) ·
-  [Risk Scoring Framework](docs/06_RISK_SCORING_FRAMEWORK.md) (core IP)
-- [PDF Extraction Workflow](docs/07_PDF_EXTRACTION_WORKFLOW.md) ·
-  [GIS Architecture](docs/08_GIS_ARCHITECTURE.md) · [API Design](docs/09_API_DESIGN.md)
-- [MVP Requirements](docs/10_MVP_REQUIREMENTS.md) ·
-  [Implementation Roadmap](docs/11_IMPLEMENTATION_ROADMAP.md) ·
-  [Future Roadmap](docs/12_FUTURE_ROADMAP.md)
+```bash
+cp .env.example .env
+# Edit .env — set ANTHROPIC_API_KEY and FAH_PASSWORD (required for auth)
 
-## Stack (planned for the MVP)
-
-| Layer | Choice |
-|-------|--------|
-| Backend | Python 3.11+ · FastAPI |
-| Database | SQLite (MVP) → PostGIS later · SQLAlchemy |
-| GIS | GeoPandas · Shapely · pyproj · Leaflet.js (Folium/simplekml for export) |
-| Extraction | pdfplumber · Tesseract OCR · Anthropic Claude |
-| Reports | reportlab / weasyprint (PDF) · simplekml (KMZ) |
-
-## The MVP loop
-
-```
-upload PDF → extract (LLM + OCR, human-reviewed) → store
-           → translate (geotech → hydrostratigraphy)
-           → score 10 risk categories (level + confidence + evidence + explanation)
-           → interactive map (Green/Yellow/Orange/Red)
-           → export KMZ + forensic PDF
+docker compose up -d
+# open http://your-server:8000
 ```
 
-## Layout
+The `fah-data` Docker volume persists the SQLite database and uploaded PDFs across restarts.
+
+### Direct (Windows Server / Linux)
+
+```bash
+# Windows
+.\scripts\start.ps1 -Port 8000 -Workers 2
+
+# Linux/macOS
+bash scripts/start.sh 8000 2
+```
+
+Put Nginx or Caddy in front for TLS termination. Example Nginx block:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name fah.yourdomain.com;
+
+    ssl_certificate     /etc/ssl/certs/fah.crt;
+    ssl_certificate_key /etc/ssl/private/fah.key;
+
+    client_max_body_size 60M;          # matches the 50 MB upload limit
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_read_timeout 120s;       # accommodates LLM extraction calls
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+    }
+}
+```
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes (LLM extraction) | Claude API key (`sk-ant-…`) |
+| `FAH_PASSWORD` | **Yes (production)** | Web UI password — all routes require it when set. Leave unset for local dev. |
+| `DB_URL` | No | Override SQLite with PostGIS: `postgresql+psycopg://user:pass@host/db` |
+| `FAH_EXTRACTION_MODEL` | No | Default: `claude-opus-4-8` |
+| `FAH_OCR_LANGUAGE` | No | Tesseract language code, default `eng` |
+| `FAH_LOG_LEVEL` | No | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+
+---
+
+## Backup
+
+```bash
+# Windows — run daily via Task Scheduler
+.\scripts\backup_db.ps1
+
+# Linux/macOS — add to crontab (2 AM daily)
+0 2 * * * /path/to/fah-explorer/scripts/backup_db.sh
+```
+
+Backups land in `data/backups/` with timestamps; the last 30 are retained automatically.
+
+---
+
+## The workflow
+
+```
+Upload PDF
+  → Run extraction (Claude + OCR)
+  → Human review & approve (forensic gate — nothing commits without explicit approval)
+  → Translation: raw lithology → hydrostratigraphy (aquifer / aquitard / barrier / perching)
+  → Risk scoring: 10 categories, each with score + level + confidence + plain-language explanation
+  → Interactive map: interpolated risk surfaces over satellite imagery
+  → Export: KMZ (Google Earth) + forensic PDF report
+```
+
+---
+
+## Running tests
+
+```bash
+python -m pytest                    # 66 tests
+python -m pytest tests/ -v          # verbose
+python -m mypy backend/             # type checking
+```
+
+---
+
+## Architecture
 
 ```
 fah-explorer/
-├── docs/         # design documentation (read 00_INDEX.md first)
-├── config/       # externalised IP: translation_rules.yaml, risk_rules.yaml, settings.yaml
-├── backend/fah/  # FastAPI app: db · ingest · translate · risk · gis · api · reports
-├── frontend/     # Jinja2 templates + Leaflet map
-├── data/         # uploads (immutable) · extracted · exports · SQLite db
-├── scripts/      # init_db, lithology loader, demo_ingest
-└── tests/        # translation · risk · gis · ingest
+├── backend/fah/
+│   ├── api/          # FastAPI routes + auth middleware
+│   ├── db/           # SQLAlchemy models, session, migrations, seed
+│   ├── ingest/       # PDF reader, LLM extractor, human-review gate
+│   ├── translate/    # Lithology → hydrostratigraphy (core IP)
+│   ├── risk/         # 10-category risk engine (core IP)
+│   ├── gis/          # Interpolation, surface build, KMZ export, PNG render
+│   └── reports/      # Forensic PDF report generation
+├── config/
+│   ├── settings.yaml           # all runtime config
+│   ├── translation_rules.yaml  # hydrostratigraphic translation IP
+│   └── risk_rules.yaml         # risk scoring IP
+├── frontend/         # Jinja2 templates + Leaflet map + static assets
+├── data/             # uploads (immutable) · extracted · exports · SQLite DB
+├── docs/             # full design documentation
+├── scripts/          # start, backup, init_db, demo scripts
+└── tests/            # 66 tests across all modules
 ```
 
-## Configuration
+---
 
-Copy [`.env.example`](.env.example) → `.env` and set `ANTHROPIC_API_KEY`. Runtime settings live in
-[`config/settings.yaml`](config/settings.yaml). The domain rules — the platform's intellectual
-property — live in [`config/translation_rules.yaml`](config/translation_rules.yaml) and
-[`config/risk_rules.yaml`](config/risk_rules.yaml) and are tunable without code changes.
+## Version history
+
+| Version | Date | Summary |
+|---------|------|---------|
+| **1.0.0** | 2026-06-22 | Market release — auth, data integrity fixes, performance, Docker |
+| 0.1.0 | 2026-06-22 | MVP: full charter loop (Sprints 0–6) |
+
+---
 
 ## License / use
 
-Built for GCC forensic hydrogeology investigations. Outputs are designed to be reproducible and
-defensible (forensic/legal requirement): raw reports are archived immutably and every derived
-value is traceable to its source.
+Built for GCC forensic hydrogeology investigations. Outputs are reproducible and defensible:
+raw reports are archived immutably and every derived value is traceable to its source document.

@@ -11,7 +11,11 @@
     attribution: "© OpenStreetMap", maxZoom: 19,
   });
 
-  const map = L.map("map", { layers: [satellite] }).setView([24.45, 54.4], 11);
+  const b = window.FAH.bounds;
+  const initView = b ? [[b.south, b.west], [b.north, b.east]] : null;
+  const map = L.map("map", { layers: [satellite] });
+  if (initView) map.fitBounds(initView, { padding: [40, 40] });
+  else map.setView([24.45, 54.4], 6);
   L.control.layers({ Satellite: satellite, "Street (OSM)": osm }).addTo(map);
 
   let surfaceLayer = null;

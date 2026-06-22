@@ -1,0 +1,22 @@
+services:
+  fah-explorer:
+    build: .
+    image: fah-explorer:1.0.0
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - fah-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  fah-data:
+    driver: local

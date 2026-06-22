@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fah-explorer"
-version = "0.1.0"
+version = "1.0.0"
 description = "Forensic Asset Hydrogeology Explorer — geotechnical data to groundwater & asset-risk intelligence"
 requires-python = ">=3.11"
 dependencies = [

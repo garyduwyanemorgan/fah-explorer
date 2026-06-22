@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -78,7 +79,7 @@ class SourceDocument(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     filename: Mapped[str] = mapped_column(String(512))
-    file_hash: Mapped[str] = mapped_column(String(64), index=True)  # sha256 hex
+    file_hash: Mapped[str] = mapped_column(String(64), index=True, unique=False)  # sha256 hex; uniqueness enforced per-project via ix_sd_project_hash
     page_count: Mapped[Optional[int]] = mapped_column(Integer)
     upload_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
     ocr_used: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -189,6 +190,7 @@ class RiskResult(Base):
     confidence_pct: Mapped[int] = mapped_column(Integer)
     explanation: Mapped[Optional[str]] = mapped_column(Text)
     evidence_json: Mapped[Optional[str]] = mapped_column(Text)
+    site_json: Mapped[Optional[str]] = mapped_column(Text)        # JSON of site context flags used
     engine_version: Mapped[Optional[str]] = mapped_column(String(64))
     computed_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -214,6 +216,10 @@ class ExtractionRecord(Base):
     source_document: Mapped["SourceDocument"] = relationship(
         back_populates="extraction_records"
     )
+
+
+# Enforce: one (project, file_hash) pair only — prevents duplicate-upload contamination.
+Index("ix_sd_project_hash", SourceDocument.project_id, SourceDocument.file_hash, unique=True)
 
 
 class LithologyDictionary(Base):

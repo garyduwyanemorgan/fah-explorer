@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from fah.api import (
+    auth,
     routes_extraction,
     routes_layers,
     routes_map,
@@ -23,6 +24,7 @@ from fah.api import (
     routes_translate,
     routes_upload,
 )
+from fah.api.auth import AuthMiddleware
 from fah.config import PROJECT_ROOT, configure_logging, get_settings
 from fah.db.session import init_db
 
@@ -48,6 +50,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(AuthMiddleware)
+app.include_router(auth.router)
 app.include_router(routes_projects.router)
 app.include_router(routes_upload.router)
 app.include_router(routes_extraction.router)

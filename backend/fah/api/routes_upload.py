@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fah.api.schemas import SourceDocumentOut, UploadResult
@@ -21,6 +22,8 @@ from fah.ingest.pdf_reader import archive_upload, read_pdf
 
 logger = logging.getLogger("fah.api.upload")
 router = APIRouter(prefix="/projects", tags=["upload"])
+
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 @router.post(
@@ -41,13 +44,31 @@ async def upload_pdf(
     settings = get_settings()
     settings.ensure_dirs()
 
-    # Spool to a temp file, then archive immutably under its content hash.
+    # Stream to temp file with a hard size cap.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp_path = Path(tmp.name)
-        content = await file.read()
-        tmp_path.write_bytes(content)
 
     try:
+        written = 0
+        with tmp_path.open("wb") as out:
+            while True:
+                chunk = await file.read(65_536)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds the {_MAX_UPLOAD_BYTES // (1024*1024)} MB upload limit.",
+                    )
+                out.write(chunk)
+
+        # Validate PDF magic bytes (%PDF).
+        with tmp_path.open("rb") as f:
+            magic = f.read(4)
+        if magic != b"%PDF":
+            raise HTTPException(status_code=415, detail="File is not a valid PDF (bad magic bytes).")
+
         stored_path, digest = archive_upload(tmp_path, settings.uploads_dir)
         result = read_pdf(
             stored_path, ocr_enabled=settings.ocr_enabled, ocr_language=settings.ocr_language
@@ -61,11 +82,18 @@ async def upload_pdf(
         file_hash=digest,
         page_count=result.page_count,
         ocr_used=result.ocr_used,
-        extraction_status="extracted" if result.full_text else "pending",
+        extraction_status="pending",   # LLM extraction has NOT run yet
         stored_path=str(stored_path),
     )
     db.add(doc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This PDF has already been uploaded to this project (duplicate content hash).",
+        )
     db.refresh(doc)
 
     logger.info(

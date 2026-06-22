@@ -105,6 +105,7 @@ def assess_project(
             db.delete(old)
         db.flush()
 
+        site_json_str = json.dumps(site) if site else None
         ctx = RiskContext.from_borehole(bh, site)
         for cr in assess_borehole(ctx, rules):
             db.add(
@@ -116,6 +117,7 @@ def assess_project(
                     confidence_pct=cr.confidence_pct,
                     explanation=cr.explanation,
                     evidence_json=json.dumps(cr.evidence),
+                    site_json=site_json_str,
                     engine_version=version,
                 )
             )

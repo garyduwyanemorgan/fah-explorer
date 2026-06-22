@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -38,10 +38,28 @@ def _enable_sqlite_fk(dbapi_connection, _connection_record) -> None:  # type: ig
         cursor.close()
 
 
+def _run_migrations() -> None:
+    """Apply incremental schema changes to existing databases (idempotent)."""
+    migrations = [
+        # site context persistence on risk results
+        "ALTER TABLE risk_results ADD COLUMN site_json TEXT",
+        # per-project unique index on file_hash
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_sd_project_hash ON source_documents (project_id, file_hash)",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # column / index already exists
+
+
 def init_db() -> None:
-    """Create all tables and the data directories. Idempotent."""
+    """Create all tables, run migrations, and ensure data directories. Idempotent."""
     _settings.ensure_dirs()
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
     logger.info("Schema ensured at %s", _settings.database_url)
 
 

@@ -138,6 +138,13 @@ def _commit_model(
         if ebh.ground_level_m is not None and ebh.gwl_depth_m is not None:
             gwl_elev = ebh.ground_level_m - ebh.gwl_depth_m
 
+        if lon is None or lat is None:
+            logger.warning(
+                "Borehole %s has no usable coordinates — it will be committed but will not "
+                "appear on the map. Provide easting/northing or lon/lat in the extraction.",
+                ebh.bh_ref,
+            )
+
         bh = Borehole(
             project_id=project.id,
             bh_ref=ebh.bh_ref,
@@ -154,26 +161,29 @@ def _commit_model(
         db.flush()
         counts["boreholes"] += 1
 
+        committed_layers: list[Layer] = []
         for seq, elayer in enumerate(sorted(ebh.layers, key=lambda x: x.top_depth_m), start=1):
-            db.add(
-                Layer(
-                    borehole_id=bh.id,
-                    seq=seq,
-                    top_depth_m=elayer.top_depth_m,
-                    bottom_depth_m=elayer.bottom_depth_m,
-                    raw_description=elayer.raw_description,
-                    spt_n=elayer.spt_n,
-                    moisture=elayer.moisture,
-                    density_desc=elayer.density_desc,
-                    is_cemented=_looks_cemented(elayer.raw_description),
-                )
+            layer = Layer(
+                borehole_id=bh.id,
+                seq=seq,
+                top_depth_m=elayer.top_depth_m,
+                bottom_depth_m=elayer.bottom_depth_m,
+                raw_description=elayer.raw_description,
+                spt_n=elayer.spt_n,
+                moisture=elayer.moisture,
+                density_desc=elayer.density_desc,
+                is_cemented=_looks_cemented(elayer.raw_description),
             )
+            db.add(layer)
+            db.flush()  # materialise id so lab results can reference it
+            committed_layers.append(layer)
             counts["layers"] += 1
 
         for elab in ebh.lab_results:
             db.add(
                 LabResult(
                     borehole_id=bh.id,
+                    layer_id=_match_layer_id(elab.depth_m, committed_layers),
                     depth_m=elab.depth_m,
                     parameter=elab.parameter,
                     value=elab.value,
@@ -185,11 +195,27 @@ def _commit_model(
     return counts
 
 
+_CEMENTED_NEGATIONS = ("non-cemented", "non cemented", "uncemented", "not cemented")
+_CEMENTED_TERMS = ("cemented", "caprock", "calcarenite", "calcisiltite")
+
+
 def _looks_cemented(description: str | None) -> bool:
     if not description:
         return False
     d = description.lower()
-    return any(t in d for t in ("cemented", "caprock", "calcarenite", "calcisiltite"))
+    if any(t in d for t in _CEMENTED_NEGATIONS):
+        return False
+    return any(t in d for t in _CEMENTED_TERMS)
+
+
+def _match_layer_id(depth_m: float | None, layers: list[Layer]) -> int | None:
+    """Return the id of the layer whose interval contains depth_m, else None."""
+    if depth_m is None or not layers:
+        return None
+    for layer in layers:
+        if layer.top_depth_m <= depth_m <= layer.bottom_depth_m:
+            return layer.id
+    return None
 
 
 def approve_and_commit(
@@ -208,6 +234,11 @@ def approve_and_commit(
     document = db.get(SourceDocument, document_id)
     if document is None:
         raise ReviewError(f"Document {document_id} not found.")
+    if document.extraction_status == "committed":
+        raise ReviewError(
+            f"Document {document_id} has already been committed. "
+            "Upload the same report again to create a new document record if a re-extraction is needed."
+        )
     record = _latest_record(db, document_id)
     if record is None:
         raise ReviewError(f"No extraction has been run for document {document_id}.")

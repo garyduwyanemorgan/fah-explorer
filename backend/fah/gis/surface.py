@@ -49,6 +49,9 @@ class SurfaceSet:
     n_boreholes: int
     drivers_available: list[str] = field(default_factory=list)
     engine_version: str = ""
+    # PNG bytes cached on first render; cleared by invalidate().
+    _png_cache: dict[str, bytes] = field(default_factory=dict, repr=False)
+    _conf_png: bytes | None = field(default=None, repr=False)
 
 
 class CellContext:

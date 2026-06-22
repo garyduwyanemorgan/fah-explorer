@@ -37,7 +37,10 @@
   <div id="map"></div>
 
   <script>
-    window.FAH = { projectId: {{ project_id }} };
+    window.FAH = {
+      projectId: {{ project_id }},
+      bounds: {% if bounds %}{{ bounds | tojson }}{% else %}null{% endif %}
+    };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/static/js/map.js"></script>

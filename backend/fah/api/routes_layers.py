@@ -66,6 +66,9 @@ def surface_meta(
     }
 
 
+_PNG_HEADERS = {"Cache-Control": "private, max-age=300"}
+
+
 @router.get("/{project_id}/surface/{category}.png")
 def surface_png(
     project_id: int,
@@ -76,15 +79,14 @@ def surface_png(
     _valid_category(category)
     surfaces = get_or_build(db, project.id)
     if surfaces is None or category not in surfaces.score_grids:
-        # Not an error condition — there just aren't enough located boreholes for a surface yet.
-        # Clients should consult `/surface/{category}/meta` first; we say so explicitly.
         raise HTTPException(
             404,
             detail="No risk surface for this project/category — too few located boreholes. "
             "See /surface/{category}/meta for status.",
         )
-    png = render.score_grid_to_png(surfaces.score_grids[category])
-    return Response(content=png, media_type="image/png")
+    if category not in surfaces._png_cache:
+        surfaces._png_cache[category] = render.score_grid_to_png(surfaces.score_grids[category])
+    return Response(content=surfaces._png_cache[category], media_type="image/png", headers=_PNG_HEADERS)
 
 
 @router.get("/{project_id}/surface/{category}/confidence.png")
@@ -102,8 +104,9 @@ def confidence_png(
             detail="No confidence surface for this project — too few located boreholes. "
             "See /surface/{category}/meta for status.",
         )
-    png = render.confidence_grid_to_png(surfaces.confidence_grid)
-    return Response(content=png, media_type="image/png")
+    if surfaces._conf_png is None:
+        surfaces._conf_png = render.confidence_grid_to_png(surfaces.confidence_grid)
+    return Response(content=surfaces._conf_png, media_type="image/png", headers=_PNG_HEADERS)
 
 
 @router.get("/{project_id}/export/kmz")

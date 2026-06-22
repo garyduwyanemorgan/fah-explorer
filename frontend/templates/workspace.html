@@ -32,8 +32,12 @@
         <td>{{ d.page_count or "—" }}</td>
         <td>{{ "yes" if d.ocr_used else "no" }}</td>
         <td class="row">
-          <button class="secondary" onclick="extract({{ d.id }})">Run extraction</button>
+          {% if d.extraction_status != "committed" %}
+          <button class="secondary" id="btn-extract-{{ d.id }}" onclick="extract({{ d.id }}, this)">Run extraction</button>
+          {% endif %}
+          {% if d.extraction_status in ["extracted", "committed"] %}
           <a class="btn link" href="/projects/{{ project.id }}/documents/{{ d.id }}/review">Review &amp; approve</a>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -45,6 +49,11 @@
 
 <div class="card">
   <h2 style="margin-top:0">3 · Interpret</h2>
+  {% if counts.risk_results > 0 %}
+  <div class="msg warn" id="stale-warn" style="display:none">
+    ⚠ Boreholes have changed — re-run translation then risk scoring to update results.
+  </div>
+  {% endif %}
   <p class="row">
     <button onclick="run('translate')">Run translation → hydrostratigraphy</button>
     <span id="translate-msg" class="muted"></span>
@@ -91,13 +100,23 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   } else { msg.innerHTML = `<div class="msg err">${j.detail || "Upload failed"}</div>`; }
 });
 
-async function extract(docId) {
+async function extract(docId, btn) {
   const msg = document.getElementById("doc-msg");
-  msg.innerHTML = '<div class="msg">Extracting with the LLM…</div>';
-  const r = await fetch(`/projects/${PID}/extraction/${docId}/extract`, { method: "POST" });
-  const j = await r.json();
-  if (r.ok) location.href = `/projects/${PID}/documents/${docId}/review`;
-  else msg.innerHTML = `<div class="msg err">${j.detail || "Extraction failed"}</div>`;
+  btn.disabled = true;
+  btn.textContent = "Extracting… (may take 30–60 s)";
+  msg.innerHTML = '<div class="msg">Sending report to Claude for extraction — please wait…</div>';
+  try {
+    const r = await fetch(`/projects/${PID}/extraction/${docId}/extract`, { method: "POST" });
+    const j = await r.json();
+    if (r.ok) location.href = `/projects/${PID}/documents/${docId}/review`;
+    else {
+      msg.innerHTML = `<div class="msg err">${j.detail || "Extraction failed"}</div>`;
+      btn.disabled = false; btn.textContent = "Run extraction";
+    }
+  } catch (e) {
+    msg.innerHTML = `<div class="msg err">Network error: ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = "Run extraction";
+  }
 }
 
 async function run(kind) {
@@ -106,6 +125,16 @@ async function run(kind) {
   const r = await fetch(`/projects/${PID}/${kind}`, { method: "POST" });
   const j = await r.json();
   span.textContent = r.ok ? JSON.stringify(j) : (j.detail || "Failed");
+  // After re-translation, flag risk results as potentially stale.
+  if (r.ok && kind === "translate") {
+    const warn = document.getElementById("stale-warn");
+    if (warn) warn.style.display = "";
+  }
+  // After re-scoring, hide the stale warning.
+  if (r.ok && kind === "risk") {
+    const warn = document.getElementById("stale-warn");
+    if (warn) warn.style.display = "none";
+  }
 }
 
 async function runRisk() {

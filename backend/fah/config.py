@@ -89,7 +89,10 @@ def get_settings() -> Settings:
     gis = raw.get("gis", {})
     rules = raw.get("rules", {})
 
-    database_url = os.environ.get("DB_URL", db.get("url", "sqlite:///data/fah_explorer.db"))
+    database_path = _resolve(paths.get("database", "data/fah_explorer.db"))
+    # Derive the URL from the resolved absolute path so the DB lands in the project tree
+    # regardless of the CWD uvicorn is launched from. DB_URL env var still overrides.
+    database_url = os.environ.get("DB_URL", f"sqlite:///{database_path}")
 
     settings = Settings(
         raw=raw,
@@ -100,7 +103,7 @@ def get_settings() -> Settings:
         uploads_dir=_resolve(paths.get("uploads_dir", "data/uploads")),
         extracted_dir=_resolve(paths.get("extracted_dir", "data/extracted")),
         exports_dir=_resolve(paths.get("exports_dir", "data/exports")),
-        database_path=_resolve(paths.get("database", "data/fah_explorer.db")),
+        database_path=database_path,
         database_url=database_url,
         crs_input_default=crs.get("input_default", "EPSG:32640"),
         crs_storage=crs.get("storage", "EPSG:4326"),

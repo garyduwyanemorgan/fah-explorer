@@ -4,7 +4,7 @@
 
 app:
   name: "FAH Explorer"
-  version: "0.1.0"           # code/app version (stamped into engine_version)
+  version: "1.0.0"           # code/app version (stamped into engine_version)
   log_level: "INFO"          # passed to logging module
 
 paths:
