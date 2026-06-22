@@ -121,12 +121,14 @@ def build_surfaces(
     site = site or {}
 
     boreholes = list(db.scalars(select(Borehole).where(Borehole.project_id == project_id)))
-    xs, ys, contexts = [], [], []
+    _xs: list[float] = []
+    _ys: list[float] = []
+    contexts: list[RiskContext] = []
     for bh in boreholes:
         xy = working_xy(bh.easting, bh.northing, bh.lon, bh.lat, crs_input)
         if xy is None:
             continue
-        xs.append(xy[0]); ys.append(xy[1])
+        _xs.append(xy[0]); _ys.append(xy[1])
         contexts.append(RiskContext.from_borehole(bh, site))
 
     if len(contexts) < MIN_BOREHOLES_FOR_SURFACE:
@@ -134,7 +136,8 @@ def build_surfaces(
                     project_id, len(contexts), MIN_BOREHOLES_FOR_SURFACE)
         return None
 
-    xs, ys = np.array(xs), np.array(ys)
+    xs: np.ndarray = np.array(_xs)
+    ys: np.ndarray = np.array(_ys)
     grid = build_grid(xs, ys, resolution_m=10.0)
     if grid is None:
         return None
@@ -178,7 +181,7 @@ def build_surfaces(
         labs = {p: _grid_val(lab_fields.get(p), iy, ix) for p in _LAB_DRIVERS}
         nearest = contexts[int(tree.query([cell_x, cell_y])[1])]
         cell = CellContext(drivers, labs, nearest, site)
-        for cr in assess_borehole(cell, rules):
+        for cr in assess_borehole(cell, rules):  # type: ignore[arg-type]
             score_grids[cr.category][iy, ix] = cr.score
 
     south, west, north, east = metres_bbox_to_lonlat(

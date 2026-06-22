@@ -94,9 +94,10 @@ def distance_confidence(xs: np.ndarray, ys: np.ndarray, grid: Grid) -> np.ndarra
 
 def variance_confidence(field: InterpolatedField, grid: Grid) -> np.ndarray:
     """Confidence (0-100) from kriging variance, normalised to its in-hull maximum."""
-    var = field.variance
+    # variance is guaranteed non-None when this function is called (caller checks)
+    var: np.ndarray = field.variance  # type: ignore[assignment]
     inside = grid.inside
-    vmax = np.nanmax(var[inside]) if np.isfinite(var[inside]).any() else None
+    vmax = float(np.nanmax(var[inside])) if np.isfinite(var[inside]).any() else None
     out = np.full(var.shape, np.nan)
     if not vmax or vmax <= 0:
         out[inside] = 100.0

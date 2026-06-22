@@ -108,11 +108,16 @@ def extract_text(
             "(see docs/07_PDF_EXTRACTION_WORKFLOW.md)."
         )
 
-    system, messages = build_messages(report_text)
+    from anthropic.types import MessageParam
+    system, raw_messages = build_messages(report_text)
+    messages: list[MessageParam] = [
+        MessageParam(role=m["role"], content=m["content"]) for m in raw_messages
+    ]
     client = Anthropic(api_key=key)
     resp = client.messages.create(
         model=model, max_tokens=max_tokens, system=system, messages=messages
     )
-    raw = "".join(block.text for block in resp.content if getattr(block, "type", None) == "text")
+    from anthropic.types import TextBlock
+    raw = "".join(block.text for block in resp.content if isinstance(block, TextBlock))
     logger.info("Claude extraction complete (model=%s, %d chars)", model, len(raw))
     return raw, parse_json_response(raw)

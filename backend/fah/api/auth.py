@@ -19,7 +19,7 @@ import os
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 logger = logging.getLogger("fah.auth")
 
@@ -36,7 +36,7 @@ def _token() -> str | None:
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: object):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         expected = _token()
         if expected is None:
             return await call_next(request)  # auth disabled
@@ -82,7 +82,7 @@ _LOGIN_HTML = """\
 
 
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
-def login_page(request: Request, next: str = "/") -> HTMLResponse:
+def login_page(request: Request, next: str = "/") -> Response:
     if _token() is None:
         return RedirectResponse("/")
     return HTMLResponse(_LOGIN_HTML.format(error="", next_url=next))
