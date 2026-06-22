@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
+from fah.api.deps import require_project
 from fah.config import get_settings
+from fah.db.models import Project
 from fah.db.session import get_db
 from fah.gis import export, layers, render
 from fah.gis.surface import get_or_build
@@ -26,18 +28,25 @@ def _valid_category(category: str) -> None:
 
 
 @router.get("/{project_id}/layers/{category}.geojson")
-def layer_geojson(project_id: int, category: str, db: Session = Depends(get_db)) -> JSONResponse:
+def layer_geojson(
+    project_id: int,
+    category: str,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
+) -> JSONResponse:
     _valid_category(category)
-    try:
-        return JSONResponse(layers.borehole_geojson(db, project_id, category))
-    except ValueError as exc:
-        raise HTTPException(404, detail=str(exc)) from exc
+    return JSONResponse(layers.borehole_geojson(db, project.id, category))
 
 
 @router.get("/{project_id}/surface/{category}/meta")
-def surface_meta(project_id: int, category: str, db: Session = Depends(get_db)) -> dict:
+def surface_meta(
+    project_id: int,
+    category: str,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
+) -> dict:
     _valid_category(category)
-    surfaces = get_or_build(db, project_id)
+    surfaces = get_or_build(db, project.id)
     if surfaces is None:
         return {
             "available": False,
@@ -58,44 +67,70 @@ def surface_meta(project_id: int, category: str, db: Session = Depends(get_db)) 
 
 
 @router.get("/{project_id}/surface/{category}.png")
-def surface_png(project_id: int, category: str, db: Session = Depends(get_db)) -> Response:
+def surface_png(
+    project_id: int,
+    category: str,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
+) -> Response:
     _valid_category(category)
-    surfaces = get_or_build(db, project_id)
+    surfaces = get_or_build(db, project.id)
     if surfaces is None or category not in surfaces.score_grids:
-        raise HTTPException(404, detail="No surface available for this project/category.")
+        # Not an error condition — there just aren't enough located boreholes for a surface yet.
+        # Clients should consult `/surface/{category}/meta` first; we say so explicitly.
+        raise HTTPException(
+            404,
+            detail="No risk surface for this project/category — too few located boreholes. "
+            "See /surface/{category}/meta for status.",
+        )
     png = render.score_grid_to_png(surfaces.score_grids[category])
     return Response(content=png, media_type="image/png")
 
 
 @router.get("/{project_id}/surface/{category}/confidence.png")
-def confidence_png(project_id: int, category: str, db: Session = Depends(get_db)) -> Response:
+def confidence_png(
+    project_id: int,
+    category: str,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
+) -> Response:
     _valid_category(category)
-    surfaces = get_or_build(db, project_id)
+    surfaces = get_or_build(db, project.id)
     if surfaces is None:
-        raise HTTPException(404, detail="No surface available for this project.")
+        raise HTTPException(
+            404,
+            detail="No confidence surface for this project — too few located boreholes. "
+            "See /surface/{category}/meta for status.",
+        )
     png = render.confidence_grid_to_png(surfaces.confidence_grid)
     return Response(content=png, media_type="image/png")
 
 
 @router.get("/{project_id}/export/kmz")
 def export_kmz(
-    project_id: int, category: str = Query(...), db: Session = Depends(get_db)
+    project_id: int,
+    category: str = Query(...),
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
 ) -> FileResponse:
     _valid_category(category)
-    surfaces = get_or_build(db, project_id)
-    path = export.export_kmz(db, project_id, category, get_settings().exports_dir, surfaces)
+    surfaces = get_or_build(db, project.id)
+    path = export.export_kmz(db, project.id, category, get_settings().exports_dir, surfaces)
     return FileResponse(path, media_type="application/vnd.google-earth.kmz", filename=path.name)
 
 
 @router.get("/{project_id}/export/pdf")
 def export_pdf(
-    project_id: int, map_category: str = Query("rise"), db: Session = Depends(get_db)
+    project_id: int,
+    map_category: str = Query("rise"),
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
 ) -> FileResponse:
     _valid_category(map_category)
-    surfaces = get_or_build(db, project_id)
+    surfaces = get_or_build(db, project.id)
     try:
         path = pdf_report.build_report(
-            db, project_id, get_settings().exports_dir, surfaces, map_category
+            db, project.id, get_settings().exports_dir, surfaces, map_category
         )
     except pdf_report.ReportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -10,11 +10,16 @@ venv/
 # Secrets
 .env
 
-# Runtime data (raw uploads, extraction artefacts, exports, db) — not version-controlled
+# Runtime data (raw uploads, extraction artefacts, exports, db, stray logs) — not version-controlled.
+# Ignore everything under data/ except the tracked folder structure (.gitkeep files).
+data/*
+!data/uploads/
+!data/extracted/
+!data/exports/
 data/uploads/*
 data/extracted/*
 data/exports/*
-*.db
 !data/uploads/.gitkeep
 !data/extracted/.gitkeep
 !data/exports/.gitkeep
+*.db

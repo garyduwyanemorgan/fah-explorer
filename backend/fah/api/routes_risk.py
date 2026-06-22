@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from fah.db.models import Borehole, RiskResult
+from fah.api.deps import require_project
+from fah.db.models import Borehole, Project, RiskResult
 from fah.db.session import get_db
 from fah.risk.engine import assess_project
 
@@ -43,10 +44,13 @@ class RiskResultOut(BaseModel):
 
 @router.post("/{project_id}/risk", response_model=RiskRunResult)
 def run_risk(
-    project_id: int, body: RiskRequest | None = None, db: Session = Depends(get_db)
+    project_id: int,
+    body: RiskRequest | None = None,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
 ) -> RiskRunResult:
     try:
-        counts = assess_project(db, project_id, site=(body.site if body else {}))
+        counts = assess_project(db, project.id, site=(body.site if body else {}))
         db.commit()
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -57,11 +61,15 @@ def run_risk(
 
 
 @router.get("/{project_id}/risk", response_model=list[RiskResultOut])
-def get_risk(project_id: int, db: Session = Depends(get_db)) -> list[RiskResultOut]:
+def get_risk(
+    project_id: int,
+    db: Session = Depends(get_db),
+    project: Project = Depends(require_project),
+) -> list[RiskResultOut]:
     rows = db.scalars(
         select(RiskResult)
         .join(Borehole, RiskResult.borehole_id == Borehole.id)
-        .where(Borehole.project_id == project_id)
+        .where(Borehole.project_id == project.id)
         .order_by(Borehole.bh_ref, RiskResult.category)
     ).all()
     out: list[RiskResultOut] = []
